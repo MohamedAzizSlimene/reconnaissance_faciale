@@ -12,7 +12,7 @@ face_detection:
 
 # Training settings
 training:
-  samples_needed: 120
+  samples_needed: 60
 
 # File paths
 paths:
