@@ -9,6 +9,7 @@ from recognize import initialize_camera as recog_initialize_camera, load_names
 import logging
 from config import PATHS, CAMERA, TRAINING, CONFIDENCE_THRESHOLD
 from flask_cors import CORS
+import time
 
 # Configure logging
 logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(levelname)s - %(message)s')
@@ -48,46 +49,47 @@ def extract_face_from_request():
 @app.route('/start_capture', methods=['POST'])
 def start_capture_api():
     try:
-        face_name = request.json.get('name')
+        print("Received request: ", request.form)
+        print("Received files: ", request.files)
+
+        face_name = request.form.get('name')
         if not face_name:
             return jsonify({'error': 'Name is required'}), 400
+
+        if 'image' not in request.files:
+            return jsonify({'error': 'No image uploaded'}), 400
+
+        image_file = request.files['image']
+        if image_file.filename == '':
+            return jsonify({'error': 'No image selected'}), 400
 
         output_folder = PATHS['image_dir']
         create_directory(output_folder)
 
-        face_id = get_face_id(output_folder)
-        save_name(face_id, face_name, PATHS['names_file'])
+        # Check if the name already has a face_id
+        face_id = None
+        if os.path.exists(PATHS['names_file']):
+            with open(PATHS['names_file'], 'r') as f:
+                for line in f:
+                    existing_id, existing_name = line.strip().split(',')
+                    if existing_name == face_name:
+                        face_id = int(existing_id)
+                        break
 
-        cam = initialize_camera(CAMERA['index'])
-        if not cam:
-            return jsonify({'error': 'Failed to initialize camera'}), 500
+        # If no face_id exists for the name, generate a new one
+        if face_id is None:
+            face_id = get_face_id(output_folder)
+            save_name(face_id, face_name, PATHS['names_file'])
 
-        count = 0
-        face_cascade = cv2.CascadeClassifier(cv2.data.haarcascades + 'haarcascade_frontalface_default.xml')
+        img_path = os.path.join(output_folder, f'Users-{face_id}-{time.time()}.jpg')
+        image_file.save(img_path)
 
-        while count < TRAINING['samples_needed']:
-            ret, img = cam.read()
-            if not ret:
-                continue
-
-            gray = cv2.cvtColor(img, cv2.COLOR_BGR2GRAY)
-            faces = face_cascade.detectMultiScale(gray, scaleFactor=1.1, minNeighbors=5, minSize=(50, 50))
-
-            for (x, y, w, h) in faces:
-                face_img = gray[y:y+h, x:x+w]
-                img_path = os.path.join(output_folder, f'Users-{face_id}-{count+1}.jpg')
-                cv2.imwrite(img_path, face_img)
-                count += 1
-
-                if count >= TRAINING['samples_needed']:
-                    break
-
-        cam.release()
-        return jsonify({'message': f'{count} images captured successfully for {face_name}', 'face_id': face_id}), 200
+        return jsonify({'message': f'Image saved successfully for {face_name}', 'face_id': face_id}), 200
 
     except Exception as e:
         logger.error(f"Error during image capture: {e}")
         return jsonify({'error': str(e)}), 500
+
 
 
 @app.route('/train_model', methods=['POST'])
@@ -147,4 +149,5 @@ def recognize_face_api():
 
 
 if __name__ == '__main__':
-    app.run(debug=True)
+    app.run(host='0.0.0.0', port=5000, debug=True)
+
