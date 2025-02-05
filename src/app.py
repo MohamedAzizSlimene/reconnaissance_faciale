@@ -1,6 +1,7 @@
 from flask import Flask, request, jsonify
 import os
 import cv2
+import base64
 import numpy as np
 from face_cin_extraction import extract_face as extract_face_from_cin
 from face_taker import create_directory, initialize_camera, get_face_id, save_name
@@ -9,7 +10,8 @@ from recognize import initialize_camera as recog_initialize_camera, load_names
 import logging
 from config import PATHS, CAMERA, TRAINING, CONFIDENCE_THRESHOLD
 from flask_cors import CORS
-
+from config import CAMERA, FACE_DETECTION, PATHS, CONFIDENCE_THRESHOLD
+import json
 # Configure logging
 logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(levelname)s - %(message)s')
 logger = logging.getLogger(__name__)
@@ -99,44 +101,67 @@ def train_model_api():
         return jsonify({'error': str(e)}), 500
 
 
-@app.route('/recognize_face', methods=['POST'])
-def recognize_face_api():
+# Load face recognizer
+recognizer = cv2.face.LBPHFaceRecognizer_create()
+if os.path.exists(PATHS['trainer_file']):
+    recognizer.read(PATHS['trainer_file'])
+else:
+    logger.error("Trainer file not found. Please train the model first.")
+    exit(1)
+
+# Load face cascade classifier
+face_cascade = cv2.CascadeClassifier(PATHS['cascade_file'])
+if face_cascade.empty():
+    logger.error("Error loading cascade classifier")
+    exit(1)
+
+# Load names
+def load_names(filename):
     try:
-        cam = recog_initialize_camera(CAMERA['index'])
-        if not cam:
-            return jsonify({'error': 'Failed to initialize camera'}), 500
-
-        recognizer = cv2.face.LBPHFaceRecognizer_create()
-        recognizer.read(PATHS['trainer_file'])
-
-        face_cascade = cv2.CascadeClassifier(PATHS['cascade_file'])
-        names = load_names(PATHS['names_file'])
-
-        while True:
-            ret, img = cam.read()
-            if not ret:
-                continue
-
-            gray = cv2.cvtColor(img, cv2.COLOR_BGR2GRAY)
-            faces = face_cascade.detectMultiScale(gray, scaleFactor=1.1, minNeighbors=5, minSize=(50, 50))
-
-            for (x, y, w, h) in faces:
-                id, confidence = recognizer.predict(gray[y:y+h, x:x+w])
-                if confidence >= CONFIDENCE_THRESHOLD:
-                    name = names.get(str(id), "Unknown")
-                    cam.release()
-                    return jsonify({'message': f'Face recognized: {name}', 'confidence': confidence}), 200
-                else:
-                    cam.release()
-                    return jsonify({'message': 'Face not recognized', 'confidence': confidence}), 404
-
+        if os.path.exists(filename):
+            with open(filename, 'r') as fs:
+                content = fs.read().strip()
+                return json.loads(content) if content else {}
     except Exception as e:
-        logger.error(f"Error during face recognition: {e}")
-        return jsonify({'error': str(e)}), 500
-    finally:
-        if 'cam' in locals():
-            cam.release()
+        logger.error(f"Error loading names: {e}")
+    return {}
 
+names = load_names(PATHS['names_file'])
+
+@app.route('/recognize_face', methods=['POST'])
+def recognize_face():
+    if 'image' not in request.files:
+        return jsonify({'error': 'No image file provided'}), 400
+    
+    file = request.files['image']
+    npimg = np.frombuffer(file.read(), np.uint8)
+    img = cv2.imdecode(npimg, cv2.IMREAD_COLOR)
+    gray = cv2.cvtColor(img, cv2.COLOR_BGR2GRAY)
+    
+    faces = face_cascade.detectMultiScale(
+        gray,
+        scaleFactor=FACE_DETECTION['scale_factor'],
+        minNeighbors=FACE_DETECTION['min_neighbors'],
+        minSize=FACE_DETECTION['min_size']
+    )
+    
+    results = []
+    for (x, y, w, h) in faces:
+        id, confidence = recognizer.predict(gray[y:y+h, x:x+w])
+        if confidence >= CONFIDENCE_THRESHOLD:
+            name = names.get(str(id), "Unknown")
+            message = f"Verified: {name}"
+        else:
+            name = "Unknown"
+            message = "Not Verified"
+        
+        results.append({
+            'name': name,
+            'confidence': float(confidence) if confidence != "N/A" else "N/A",
+            'message': message
+        })
+    
+    return jsonify({'results': results})
 
 if __name__ == '__main__':
     app.run(host='0.0.0.0', port=5000, debug=True)
