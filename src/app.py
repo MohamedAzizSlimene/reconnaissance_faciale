@@ -91,11 +91,31 @@ def train_model_api():
         if not faces or not ids:
             return jsonify({'error': 'No training data found'}), 400
 
-        recognizer = cv2.face.LBPHFaceRecognizer_create()
-        recognizer.train(faces, np.array(ids))
-        recognizer.write(PATHS['trainer_file'])
+        # Initialize face recognizer with custom parameters
+        recognizer = cv2.face.LBPHFaceRecognizer_create(
+            radius=1,
+            neighbors=8,
+            grid_x=8,
+            grid_y=8
+        )
+
+        trainer_file = PATHS['trainer_file']
+        
+        # Check if an existing model is present for incremental training
+        if os.path.exists(trainer_file):
+            recognizer.read(trainer_file)
+            logger.info("Updating existing model...")
+            recognizer.update(faces, np.array(ids))
+        else:
+            logger.info("Training a new model...")
+            recognizer.train(faces, np.array(ids))
+
+        # Save the trained model
+        recognizer.write(trainer_file)
+        logger.info(f"Model trained/updated with {len(np.unique(ids))} unique faces")
 
         return jsonify({'message': 'Model trained successfully'}), 200
+
     except Exception as e:
         logger.error(f"Error during model training: {e}")
         return jsonify({'error': str(e)}), 500
