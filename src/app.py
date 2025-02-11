@@ -19,7 +19,7 @@ logger = logging.getLogger(__name__)
 app = Flask(__name__)
 
 # Enable CORS for the entire application
-CORS(app)
+CORS(app, origins="http://148.113.44.184:3000")
 
 @app.route('/extract_face', methods=['POST'])
 def extract_face_from_request():
