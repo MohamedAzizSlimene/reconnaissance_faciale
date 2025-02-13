@@ -22,7 +22,7 @@ app = Flask(__name__)
 # Enable CORS for the entire application
 CORS(app, resources={r"/*": {"origins": "https://kyc.trimakus.com"}})
 
-@app.route('/extract_face', methods=['POST'])
+@app.route('/api/extract_face', methods=['POST'])
 def extract_face_from_request():
     try:
         image = request.files.get('image')
@@ -51,7 +51,7 @@ def extract_face_from_request():
         logger.error(f"Error in extract_face_from_request: {e}", exc_info=True)
         return jsonify({'error': str(e)}), 500
 
-@app.route('/start_capture', methods=['POST'])
+@app.route('/api/start_capture', methods=['POST'])
 def start_capture_api():
     try:
         face_name = request.form.get('name')
@@ -87,7 +87,7 @@ def start_capture_api():
         logger.error(f"Error during image capture: {e}", exc_info=True)  # Log full traceback
         return jsonify({'error': str(e)}), 500
 
-@app.route('/train_model', methods=['POST'])
+@app.route('/api/train_model', methods=['POST'])
 def train_model_api():
     try:
         faces, ids = get_images_and_labels(PATHS['image_dir'])
@@ -150,7 +150,7 @@ def load_names(filename):
 
 names = load_names(PATHS['names_file'])
 
-@app.route('/recognize_face', methods=['POST'])
+@app.route('/api/recognize_face', methods=['POST'])
 def recognize_face():
     try:
         if 'image' not in request.files:
