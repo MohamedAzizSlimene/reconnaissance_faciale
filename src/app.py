@@ -170,17 +170,28 @@ def recognize_face():
         
         results = []
         for (x, y, w, h) in faces:
-            id, confidence = recognizer.predict(gray[y:y+h, x:x+w])
-            if confidence >= CONFIDENCE_THRESHOLD:
+            face_roi = gray[y:y+h, x:x+w]
+            
+            if face_roi.size == 0:
+                continue  # Skip if no valid face region
+            
+            id, confidence = recognizer.predict(face_roi)
+            print(f"Recognized ID: {id}, Confidence: {confidence}")
+
+            if confidence <= CONFIDENCE_THRESHOLD:  # Lower confidence = better match
                 name = names.get(str(id), "Unknown")
-                message = f"Verified: {name}"
+                if name == "Unknown":
+                    message = "Not Verified"
+                else:
+                    message = f"Verified: {name}"
             else:
-                name = "Unknown"
+                name = "Unknown"    
                 message = "Not Verified"
+
             
             results.append({
                 'name': name,
-                'confidence': float(confidence) if confidence != "N/A" else "N/A",
+                'confidence': float(confidence),
                 'message': message
             })
         
@@ -188,6 +199,7 @@ def recognize_face():
     except Exception as e:
         logger.error(f"Error in recognize_face: {e}", exc_info=True)
         return jsonify({'error': str(e)}), 500
+
 
 if __name__ == '__main__':
     app.run(host='0.0.0.0', port=5000, debug=True)  
